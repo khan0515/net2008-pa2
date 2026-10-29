@@ -5,6 +5,7 @@ Name: Zarak Khan | Student ID: 041075276
 
 Requires Python 3 and PyYAML.
 
-Run: `python pa2.py DEVICES.xml POLICY.yaml`
+Run: `python pa2.py DEVICES.xml POLICY.yaml`.
+
 Writes audit.json.
 
