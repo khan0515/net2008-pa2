@@ -7,6 +7,11 @@ import sys
 import xml.etree.ElementTree as ET
 import yaml
 
+
+class AuditError(Exception):
+    """Raised when an input file is missing."""
+
+
 class Device:
     """One network device from the inventory file."""
 
@@ -39,9 +44,41 @@ class Device:
         return True
 
 
+def version_to_list(version):
+    """Turn a version into a list of numbers."""
+    numbers = []
+    for part in str(version).split("."):
+        numbers.append(int(part))
+    return numbers
+
+
+def is_older_version(found, required):
+    """Return True if the found version is older."""
+    found_numbers = version_to_list(found)
+    required_numbers = version_to_list(required)
+
+    while len(found_numbers) < len(required_numbers):
+        found_numbers.append(0)
+    while len(required_numbers) < len(found_numbers):
+        required_numbers.append(0)
+
+    for i in range(len(found_numbers)):
+        if found_numbers[i] < required_numbers[i]:
+            return True
+        if found_numbers[i] > required_numbers[i]:
+            return False
+
+    return False
+
+
 def load_inventory(file_name):
     """Read the XML inventory"""
-    tree = ET.parse(file_name)
+    try:
+        tree = ET.parse(file_name)
+    except FileNotFoundError:
+        raise AuditError("Error: file not found: " + file_name)
+    except ET.ParseError:
+        raise AuditError("Error: file is not valid XML: " + file_name)
     root = tree.getroot()
 
     site = root.get("site")
@@ -72,13 +109,22 @@ def load_inventory(file_name):
 
     return site, devices, skipped
 
+
 def load_policy(file_name):
     """Read the YAML policy."""
-    with open(file_name, "r") as file:
-        policy = yaml.safe_load(file)
+    try:
+        with open(file_name, "r", encoding="utf-8") as file:
+            policy = yaml.safe_load(file)
+    except FileNotFoundError:
+        raise AuditError("Error: policy not found: " + file_name)
+    except yaml.YAMLError:
+        raise AuditError("Error: policy is not valid YAML: " + file_name)
 
     if policy is None:
         policy = {}
+
+    if not isinstance(policy, dict):
+        raise AuditError("Error: policy file is not a mapping: " + file_name)
 
     return policy
 
@@ -98,6 +144,16 @@ def check_device(device, policy):
                 "type": "unknown_role",
                 "role": device.role,
             })
+
+        elif device.os_version is not None:
+            required = str(min_os[device.role])
+            if is_older_version(device.os_version, required):
+                violations.append({
+                    "device": device.device_id,
+                    "type": "os_outdated",
+                    "found": device.os_version,
+                    "required": required,
+                })
 
     if policy.get("require_owner") == True:
         if not device.has_owner():
@@ -161,13 +217,20 @@ def write_report(report):
 
 
 def main():
-    """Run the audit and write audit.json."""
+    """Check the arguments, run the audit, and return an exit code."""
+    if len(sys.argv) != 3:
+        print("usage: python pa2.py DEVICES.xml POLICY.yaml")
+        return 2
+
     inventory_file = sys.argv[1]
     policy_file = sys.argv[2]
 
-    site, devices, skipped = load_inventory(inventory_file)
-
-    policy = load_policy(policy_file)
+    try:
+        site, devices, skipped = load_inventory(inventory_file)
+        policy = load_policy(policy_file)
+    except AuditError as error:
+        print(error)
+        return 1
 
     violations = []
     for device in devices:
@@ -187,7 +250,8 @@ def main():
 
     write_report(report)
     print("Audited", len(devices), "devices,", len(violations), "violations found.")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
