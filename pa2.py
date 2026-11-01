@@ -73,11 +73,10 @@ def load_inventory(file_name):
     return site, devices, skipped
 
 def load_policy(file_name):
-    """Read the YAML policy and return it as a dictionary."""
+    """Read the YAML policy."""
     with open(file_name, "r") as file:
         policy = yaml.safe_load(file)
 
-    # An empty file loads as None, which means "no checks"
     if policy is None:
         policy = {}
 
@@ -85,7 +84,7 @@ def load_policy(file_name):
 
 
 def check_device(device, policy):
-    """Return a list of the violations"""
+    """Return a list of violations"""
     violations = []
 
     if "min_os" in policy:
@@ -141,7 +140,7 @@ def count_interfaces(devices):
 
 
 def find_compliant(devices, violations):
-    """Return a sorted list of ids for devices that have no violations."""
+    """Return a list of ids for devices that have no violations."""
     bad_ids = []
     for violation in violations:
         bad_ids.append(violation["device"])
